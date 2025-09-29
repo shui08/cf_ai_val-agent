@@ -112,6 +112,15 @@
 
   /* Focus colors */
   --color-ob-focus: var(--color-blue-400);
+
+  /* Valorant palette */
+  --val-red: #ff4655; /* primary accent */
+  --val-red-hover: #e23c4a; /* hover/darken */
+  --val-gray-dark: #0f1923; /* dark bg */
+  --val-gray-light: #eaeaea; /* light bg */
+
+  /* App background that adapts theme */
+  --app-bg: var(--color-ob-base-200);
 }
 
 .dark {
@@ -155,17 +164,23 @@
 
   /* Focus colors */
   --color-ob-focus: var(--color-blue-800);
+
+  /* Dark app background */
+  --app-bg: var(--val-gray-dark);
 }
 
 .btn {
   &.btn-primary {
-    @apply border-ob-btn-primary-border bg-ob-btn-primary-bg text-ob-inverted shadow-xs;
+    @apply border-transparent text-ob-inverted shadow-xs;
+    background: var(--val-red);
 
     @variant interactive {
-      @apply not-disabled:hover:border-ob-btn-primary-border-hover not-disabled:hover:bg-ob-btn-primary-bg-hover;
+      @apply not-disabled:hover:border-transparent;
+      background: var(--val-red-hover);
 
       @variant toggle {
-        @apply not-disabled:border-ob-btn-primary-border-hover not-disabled:bg-ob-btn-primary-bg-hover;
+        @apply not-disabled:border-transparent;
+        background: var(--val-red-hover);
       }
     }
   }
@@ -211,6 +226,36 @@
   @variant interactive {
     @apply cursor-pointer transition-colors;
   }
+}
+
+/* Valorant UI accents */
+.val-title {
+  font-family:
+    "Rajdhani",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Helvetica,
+    Arial,
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
+  letter-spacing: 0.02em;
+}
+
+.val-border {
+  border-color: rgb(255 70 85 / 0.35);
+}
+
+.val-card {
+  @apply border rounded-md;
+  border-color: rgb(255 70 85 / 0.2);
+}
+
+.val-chip {
+  color: var(--val-red);
+  background-color: rgb(255 70 85 / 0.12);
 }
 
 /* Use for elements that require a tab-focus state (most elements) */

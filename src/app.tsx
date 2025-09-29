@@ -1,5 +1,5 @@
 /** biome-ignore-all lint/correctness/useUniqueElementIds: it's alright */
-import { useEffect, useState, useRef, useCallback, use } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, use } from "react";
 import { useAgent } from "agents/react";
 import { isToolUIPart } from "ai";
 import { useAgentChat } from "agents/ai-react";
@@ -28,9 +28,25 @@ import {
 
 // List of tools that require human confirmation
 // NOTE: this should match the tools that don't have execute functions in tools.ts
-const toolsRequiringConfirmation: (keyof typeof tools)[] = [
-  "getWeatherInformation"
-];
+const toolsRequiringConfirmation: (keyof typeof tools)[] = [];
+
+// Generate or retrieve a per-device session id for isolating Agent instances
+function getOrCreateSessionId(): string {
+  const key = "agent_session_id";
+  const existing = localStorage.getItem(key);
+
+  if (existing) return existing;
+
+  // Prefer crypto.randomUUID if available, otherwise random string
+  const cryptoObj = globalThis.crypto as Crypto | undefined;
+  const newId =
+    typeof cryptoObj?.randomUUID === "function"
+      ? cryptoObj.randomUUID()
+      : Math.random().toString(36).slice(2);
+
+  localStorage.setItem(key, newId);
+  return newId;
+}
 
 export default function Chat() {
   const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -70,8 +86,10 @@ export default function Chat() {
     setTheme(newTheme);
   };
 
+  const sessionId = useMemo(() => getOrCreateSessionId(), []);
   const agent = useAgent({
-    agent: "chat"
+    agent: "chat",
+    name: sessionId
   });
 
   const [agentInput, setAgentInput] = useState("");
@@ -95,7 +113,8 @@ export default function Chat() {
     await sendMessage(
       {
         role: "user",
-        parts: [{ type: "text", text: message }]
+        parts: [{ type: "text", text: message }],
+        metadata: { createdAt: new Date().toISOString() }
       },
       {
         body: extraData
@@ -113,6 +132,37 @@ export default function Chat() {
   } = useAgentChat<unknown, UIMessage<{ createdAt: string }>>({
     agent
   });
+
+  // Maintain a first-seen timestamp for any message without metadata.createdAt
+  const FIRST_SEEN_KEY = `first_seen_${sessionId}`;
+  const [firstSeen, setFirstSeen] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem(FIRST_SEEN_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    if (!agentMessages || agentMessages.length === 0) return;
+    setFirstSeen((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const m of agentMessages) {
+        if (!next[m.id]) {
+          next[m.id] = new Date().toISOString();
+          changed = true;
+        }
+      }
+      if (changed) {
+        try {
+          localStorage.setItem(FIRST_SEEN_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      }
+      return prev;
+    });
+  }, [agentMessages, FIRST_SEEN_KEY]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -144,7 +194,7 @@ export default function Chat() {
             <svg
               width="28px"
               height="28px"
-              className="text-[#F48120]"
+              className="text-[var(--val-red)]"
               data-icon="agents"
             >
               <title>Cloudflare Agents</title>
@@ -159,7 +209,7 @@ export default function Chat() {
           </div>
 
           <div className="flex-1">
-            <h2 className="font-semibold text-base">AI Chat Agent</h2>
+            <h2 className="font-semibold text-base">AI Valorant Agent</h2>
           </div>
 
           <div className="flex items-center gap-2 mr-2">
@@ -196,24 +246,26 @@ export default function Chat() {
         <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24 max-h-[calc(100vh-10rem)]">
           {agentMessages.length === 0 && (
             <div className="h-full flex items-center justify-center">
-              <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900">
+              <Card className="p-6 max-w-md mx-auto bg-neutral-100 dark:bg-neutral-900 val-card">
                 <div className="text-center space-y-4">
-                  <div className="bg-[#F48120]/10 text-[#F48120] rounded-full p-3 inline-flex">
+                  <div className="rounded-full p-3 inline-flex val-chip">
                     <Robot size={24} />
                   </div>
-                  <h3 className="font-semibold text-lg">Welcome to AI Chat</h3>
+                  <h3 className="font-semibold text-lg">
+                    Your Expert AI Valorant Agent!
+                  </h3>
                   <p className="text-muted-foreground text-sm">
-                    Start a conversation with your AI assistant. Try asking
-                    about:
+                    Let the agent know what your Riot ID is (name#tag). Then ask
+                    for insights on your recent matches. Some examples:
                   </p>
                   <ul className="text-sm text-left space-y-2">
                     <li className="flex items-center gap-2">
-                      <span className="text-[#F48120]">•</span>
-                      <span>Weather information for any city</span>
+                      <span className="text-[var(--val-red)]">•</span>
+                      <span>How was my performance on Ascent?</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <span className="text-[#F48120]">•</span>
-                      <span>Local time in different locations</span>
+                      <span className="text-[var(--val-red)]">•</span>
+                      <span>What can I improve on in my matches?</span>
                     </li>
                   </ul>
                 </div>
@@ -288,7 +340,7 @@ export default function Chat() {
                                   {formatTime(
                                     m.metadata?.createdAt
                                       ? new Date(m.metadata.createdAt)
-                                      : new Date()
+                                      : new Date(firstSeen[m.id] || Date.now())
                                   )}
                                 </p>
                               </div>

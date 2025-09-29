@@ -1,238 +1,142 @@
-# 🤖 Chat Agent Starter Kit
+# AI Valorant Agent
 
-![npm i agents command](./npm-agents-banner.svg)
+AI Valorant analytics agent built on Cloudflare Agents. It ingests recent competitive matches via HenrikDev’s API, stores per-player stats, and answers questions (KDR, map performance, spend, headshot rate, etc.) using tools and persistent state.
 
-<a href="https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/agents-starter"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"/></a>
-
-A starter template for building AI-powered chat agents using Cloudflare's Agent platform, powered by [`agents`](https://www.npmjs.com/package/agents). This project provides a foundation for creating interactive chat experiences with AI, complete with a modern UI and tool integration capabilities.
+Deployed: https://cf-val-chatbot.anandv0854.workers.dev/
 
 ## Features
 
-- 💬 Interactive chat interface with AI
-- 🛠️ Built-in tool system with human-in-the-loop confirmation
-- 📅 Advanced task scheduling (one-time, delayed, and recurring via cron)
-- 🌓 Dark/Light theme support
-- ⚡️ Real-time streaming responses
-- 🔄 State management and chat history
-- 🎨 Modern, responsive UI
+- Per-user Agent instance and persisted chat history
+- Current player memory using a per-player cursor
+- Tools for:
+  - Set active Riot ID (name#tag, optional region)
+  - Ingest/refresh latest competitive matches (size=10, mode=competitive)
+  - Compute average KDR with optional map filter
+  - Summarize recent performance (K/D/A, headshot rate, damage, economy)
+  - List recent stored matches
 
-## Prerequisites
+## Local Demo
 
-- Cloudflare account
-- OpenAI API key
+### Prerequisites
 
-## Quick Start
+- Cloudflare account and Wrangler
+- One of:
+  - OpenAI API key (default path)
+  - OR Workers AI (no OpenAI key required)
+- Discord account (for HenrikDev API key)
+- HenrikDev API key:
+  - Join this server: https://discord.gg/X3GaVkX2YN
+  - Complete the initial server verification process
+  - Navigate to the "# get a key" channel, click the "Generate" button, and
+    follow the instructions to get a key
 
-1. Create a new project:
-
-```bash
-npx create-cloudflare@latest --template cloudflare/agents-starter
-```
-
-2. Install dependencies:
+### 1) Install
 
 ```bash
 npm install
 ```
 
-3. Set up your environment:
+### 2) Configure environment
 
-Create a `.dev.vars` file:
+Create `.dev.vars` in the repo root:
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
+# For OpenAI path (default)
+OPENAI_API_KEY=sk-...
+
+# HenrikDev API
+HENRIK_API_KEY=your_henrik_api_key
 ```
 
-4. Run locally:
+Upload secrets for production when ready:
+
+```bash
+wrangler secret bulk .dev.vars
+```
+
+### 3) Run locally
 
 ```bash
 npm start
 ```
 
-5. Deploy:
+Open http://localhost:5173 and:
+
+- Enter your Riot ID as `name#tag` (if you don't have a Riot ID to use, you can try `curry#XDDDD` and `heartless#css`).
+  The agent will set the player and ingest matches.
+- Ask questions like “How is my performance on Ascent?” or “What’s my KDR?” or "What can I improve on?"
+
+## Switching to Workers AI (no OpenAI key)
+
+1. Ensure `workers-ai-provider` is installed (already in `package.json`).
+
+2. Add an `ai` binding in `wrangler.jsonc`:
+
+```jsonc
+{
+  // ...
+  "ai": { "binding": "AI" }
+}
+```
+
+3. Update `src/server.ts` to construct the Workers AI provider where `env` is available (inside the agent method):
+
+```ts
+// remove: import { openai } from "@ai-sdk/openai";
+import { createWorkersAI } from "workers-ai-provider";
+
+export class Chat extends AIChatAgent<Env> {
+  async onChatMessage(onFinish, _options) {
+    const workersai = createWorkersAI({ binding: this.env.AI });
+    const model = workersai("@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+
+    // ... keep the rest of your streamText(...) call, but pass `model`
+  }
+}
+```
+
+4. If you fully switch to Workers AI, you can remove the OpenAI secret locally.
+
+## Relevant File Guide
+
+- `src/server.ts`: Agent entry. Routes requests, runs the model with tools, streams responses.
+- `src/tools.ts`: Valorant tools: set player, ingest/refresh, queryKDR, summarize, list matches. Uses the Agent’s embedded SQLite and `this.setState`.
+- `src/app.tsx`: React chat UI. Individual user sessions, tool UI, chat timestamps.
+
+## Deploy
 
 ```bash
 npm run deploy
 ```
 
-## Project Structure
+Set production secrets via Wrangler before first deploy:
 
-```
-├── src/
-│   ├── app.tsx        # Chat UI implementation
-│   ├── server.ts      # Chat agent logic
-│   ├── tools.ts       # Tool definitions
-│   ├── utils.ts       # Helper functions
-│   └── styles.css     # UI styling
+```bash
+wrangler secret put HENRIK_API_KEY
+# Only if using OpenAI
+wrangler secret put OPENAI_API_KEY
 ```
 
-## Customization Guide
+## Credit (MIT license)
 
-### Adding New Tools
+This project started from Cloudflare’s Agents Starter template and retains portions under the MIT license:
 
-Add new tools in `tools.ts` using the tool builder:
+Copyright (c) Cloudflare, Inc.
 
-```ts
-// Example of a tool that requires confirmation
-const searchDatabase = tool({
-  description: "Search the database for user records",
-  parameters: z.object({
-    query: z.string(),
-    limit: z.number().optional()
-  })
-  // No execute function = requires confirmation
-});
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-// Example of an auto-executing tool
-const getCurrentTime = tool({
-  description: "Get current server time",
-  parameters: z.object({}),
-  execute: async () => new Date().toISOString()
-});
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
 
-// Scheduling tool implementation
-const scheduleTask = tool({
-  description:
-    "schedule a task to be executed at a later time. 'when' can be a date, a delay in seconds, or a cron pattern.",
-  parameters: z.object({
-    type: z.enum(["scheduled", "delayed", "cron"]),
-    when: z.union([z.number(), z.string()]),
-    payload: z.string()
-  }),
-  execute: async ({ type, when, payload }) => {
-    // ... see the implementation in tools.ts
-  }
-});
-```
-
-To handle tool confirmations, add execution functions to the `executions` object:
-
-```typescript
-export const executions = {
-  searchDatabase: async ({
-    query,
-    limit
-  }: {
-    query: string;
-    limit?: number;
-  }) => {
-    // Implementation for when the tool is confirmed
-    const results = await db.search(query, limit);
-    return results;
-  }
-  // Add more execution handlers for other tools that require confirmation
-};
-```
-
-Tools can be configured in two ways:
-
-1. With an `execute` function for automatic execution
-2. Without an `execute` function, requiring confirmation and using the `executions` object to handle the confirmed action. NOTE: The keys in `executions` should match `toolsRequiringConfirmation` in `app.tsx`.
-
-### Use a different AI model provider
-
-The starting [`server.ts`](https://github.com/cloudflare/agents-starter/blob/main/src/server.ts) implementation uses the [`ai-sdk`](https://sdk.vercel.ai/docs/introduction) and the [OpenAI provider](https://sdk.vercel.ai/providers/ai-sdk-providers/openai), but you can use any AI model provider by:
-
-1. Installing an alternative AI provider for the `ai-sdk`, such as the [`workers-ai-provider`](https://sdk.vercel.ai/providers/community-providers/cloudflare-workers-ai) or [`anthropic`](https://sdk.vercel.ai/providers/ai-sdk-providers/anthropic) provider:
-2. Replacing the AI SDK with the [OpenAI SDK](https://github.com/openai/openai-node)
-3. Using the Cloudflare [Workers AI + AI Gateway](https://developers.cloudflare.com/ai-gateway/providers/workersai/#workers-binding) binding API directly
-
-For example, to use the [`workers-ai-provider`](https://sdk.vercel.ai/providers/community-providers/cloudflare-workers-ai), install the package:
-
-```sh
-npm install workers-ai-provider
-```
-
-Add an `ai` binding to `wrangler.jsonc`:
-
-```jsonc
-// rest of file
-  "ai": {
-    "binding": "AI"
-  }
-// rest of file
-```
-
-Replace the `@ai-sdk/openai` import and usage with the `workers-ai-provider`:
-
-```diff
-// server.ts
-// Change the imports
-- import { openai } from "@ai-sdk/openai";
-+ import { createWorkersAI } from 'workers-ai-provider';
-
-// Create a Workers AI instance
-+ const workersai = createWorkersAI({ binding: env.AI });
-
-// Use it when calling the streamText method (or other methods)
-// from the ai-sdk
-- const model = openai("gpt-4o-2024-11-20");
-+ const model = workersai("@cf/deepseek-ai/deepseek-r1-distill-qwen-32b")
-```
-
-Commit your changes and then run the `agents-starter` as per the rest of this README.
-
-### Modifying the UI
-
-The chat interface is built with React and can be customized in `app.tsx`:
-
-- Modify the theme colors in `styles.css`
-- Add new UI components in the chat container
-- Customize message rendering and tool confirmation dialogs
-- Add new controls to the header
-
-### Example Use Cases
-
-1. **Customer Support Agent**
-   - Add tools for:
-     - Ticket creation/lookup
-     - Order status checking
-     - Product recommendations
-     - FAQ database search
-
-2. **Development Assistant**
-   - Integrate tools for:
-     - Code linting
-     - Git operations
-     - Documentation search
-     - Dependency checking
-
-3. **Data Analysis Assistant**
-   - Build tools for:
-     - Database querying
-     - Data visualization
-     - Statistical analysis
-     - Report generation
-
-4. **Personal Productivity Assistant**
-   - Implement tools for:
-     - Task scheduling with flexible timing options
-     - One-time, delayed, and recurring task management
-     - Task tracking with reminders
-     - Email drafting
-     - Note taking
-
-5. **Scheduling Assistant**
-   - Build tools for:
-     - One-time event scheduling using specific dates
-     - Delayed task execution (e.g., "remind me in 30 minutes")
-     - Recurring tasks using cron patterns
-     - Task payload management
-     - Flexible scheduling patterns
-
-Each use case can be implemented by:
-
-1. Adding relevant tools in `tools.ts`
-2. Customizing the UI for specific interactions
-3. Extending the agent's capabilities in `server.ts`
-4. Adding any necessary external API integrations
-
-## Learn More
-
-- [`agents`](https://github.com/cloudflare/agents/blob/main/packages/agents/README.md)
-- [Cloudflare Agents Documentation](https://developers.cloudflare.com/agents/)
-- [Cloudflare Workers Documentation](https://developers.cloudflare.com/workers/)
-
-## License
-
-MIT
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
